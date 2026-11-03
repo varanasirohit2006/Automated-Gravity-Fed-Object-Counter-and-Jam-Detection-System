@@ -16,684 +16,319 @@
 
 ---
 
-# 🧳 Automated Luggage Sizing, Counter & Dynamic Jam Detection System
-### *Bare-Metal STM32F401 Embedded Prototype for Smart Airport Conveyor Lines*
+# Automated Gravity-Fed Object Counter and Jam Detection System
 
-[![MCU](https://img.shields.io/badge/MCU-STM32F401CCU6%20(Black%20Pill)-002B49.svg?logo=stmicroelectronics)](https://www.st.com/en/microcontrollers-microprocessors/stm32f401cc.html)
-[![Core](https://img.shields.io/badge/Architecture-ARM%20Cortex--M4%20%40%2016MHz-blue.svg?logo=arm)](https://developer.arm.com/Processors/Cortex-M4)
-[![Firmware](https://img.shields.io/badge/Firmware-100%25%20Bare--Metal%20C%20(No%20HAL%2FNo%20CubeMX)-brightgreen.svg)](#8-register-by-register-firmware-architecture)
-[![IDE](https://img.shields.io/badge/IDE-Keil%20%C2%B5Vision%205-red.svg)](https://www.keil.com/)
-[![Peripherals](https://img.shields.io/badge/Peripherals-ADC1%20%2B%20DMA2%20%2B%20SysTick%20%2B%20EXTI%20%2B%20USART2-orange.svg)](#8-register-by-register-firmware-architecture)
-[![Telemetry](https://img.shields.io/badge/Telemetry-Bluetooth%20HC--05%20(9600%20Baud)-blueviolet.svg)](#10-bluetooth-telemetry-protocol)
-[![Course](https://img.shields.io/badge/Academic-5th%20Sem%20Embedded%20Systems%20Case%20Study%20(Group%208)-informational.svg)](#)
+**Bare-metal STM32F401CCU6 prototype for airport baggage-conveyor monitoring, with speed and length estimation.**
 
----
+[Problem statement (PDF)](problem_statement.pdf) · [Firmware](src/main.c) · [Report (PDF)](report/Report_Group_8.pdf) · [Presentation (PDF)](presentation/Group_8_Automated_Gravity_Fed_Object_Counter_and_Jam_Detection_System.pdf) · [One-page write-up (PDF)](One_page_writeup/group_8_One_Page_Project_Writeup.pdf)
 
-## 📑 Table of Contents
-1. [Executive Summary](#1-executive-summary)
-2. [Evaluator Defense: Prototype Test Rig vs. Industrial Conveyor](#2-evaluator-defense-prototype-test-rig-vs-industrial-conveyor)
-3. [Core Engineering Principles & Mathematics](#3-core-engineering-principles--mathematics)
-   - [3.1 Single Honest Speed Measurement](#31-single-honest-speed-measurement)
-   - [3.2 Camera-less Luggage Sizing via Optical Occlusion](#32-camera-less-luggage-sizing-via-optical-occlusion)
-   - [3.3 Luggage Spacing Dynamics & Live Operator Alerts](#33-luggage-spacing-dynamics--live-operator-alerts)
-   - [3.4 Speed-Adaptive Dynamic Jam Detection](#34-speed-adaptive-dynamic-jam-detection)
-   - [3.5 Directional Security Violation Detection](#35-directional-security-violation-detection)
-4. [End-to-End System Architecture](#4-end-to-end-system-architecture)
-5. [Hardware Bill of Materials (BOM)](#5-hardware-bill-of-materials-bom)
-6. [Pinout & Electrical Interfacing](#6-pinout--electrical-interfacing)
-   - [6.1 Complete Pinout Table](#61-complete-pinout-table)
-   - [6.2 Critical Electrical Safety Rule (3.3V vs 5V Analog Rail)](#62-critical-electrical-safety-rule-33v-vs-5v-analog-rail)
-   - [6.3 Breadboard Dual-Rail Power Distribution](#63-breadboard-dual-rail-power-distribution)
-   - [6.4 Transistor Buzzer Driver & Bluetooth Interconnect](#64-transistor-buzzer-driver--bluetooth-interconnect)
-7. [Deterministic 4-State Machine Sequencer](#7-deterministic-4-state-machine-sequencer)
-8. [Register-by-Register Firmware Architecture](#8-register-by-register-firmware-architecture)
-   - [8.1 Clock Gating (`RCC`)](#81-clock-gating-rcc)
-   - [8.2 General Purpose I/O (`GPIO`)](#82-general-purpose-io-gpio)
-   - [8.3 Analog-to-Digital Converter (`ADC1`)](#83-analog-to-digital-converter-adc1)
-   - [8.4 Direct Memory Access (`DMA2 Stream 0`)](#84-direct-memory-access-dma2-stream-0)
-   - [8.5 Deterministic 1 ms SysTick Engine (`SysTick`)](#85-deterministic-1-ms-systick-engine-systick)
-   - [8.6 Asynchronous External Interrupt (`EXTI5`)](#86-asynchronous-external-interrupt-exti5)
-   - [8.7 Serial Telemetry Transceiver (`USART2`)](#87-serial-telemetry-transceiver-usart2)
-9. [Bluetooth Telemetry Protocol & Data Format](#9-bluetooth-telemetry-protocol--data-format)
-10. [Keil µVision 5 Build & Toolchain Setup](#10-keil-µvision-5-build--toolchain-setup)
-11. [Step-by-Step Live Demonstration Protocol](#11-step-by-step-live-demonstration-protocol)
-12. [Examiner Viva Voce Defense & Deep-Dive Q&A](#12-examiner-viva-voce-defense--deep-dive-qa)
-13. [Repository File Map](#13-repository-file-map)
+This README describes the implementation in [`src/main.c`](src/main.c). The report's Appendix C records the change from an earlier DMA-based design to the current polled implementation. ADC polling, fixed fault windows, PA5 buzzer control, and labelled Bluetooth text are the behaviours implemented in the source.
 
----
+## Table of Contents
 
-## 1. Executive Summary
+1. [Problem and objectives](#1-problem-and-objectives)
+2. [Prototype scope](#2-prototype-scope)
+3. [Measurement and fault detection](#3-measurement-and-fault-detection)
+4. [System architecture](#4-system-architecture)
+5. [Hardware](#5-hardware)
+6. [Pinout and electrical interfacing](#6-pinout-and-electrical-interfacing)
+7. [Tracking and recovery](#7-tracking-and-recovery)
+8. [Firmware and register configuration](#8-firmware-and-register-configuration)
+9. [Bluetooth telemetry](#9-bluetooth-telemetry)
+10. [Build and programming](#10-build-and-programming)
+11. [Demonstration procedure](#11-demonstration-procedure)
+12. [Limitations and future work](#12-limitations-and-future-work)
+13. [Repository file map](#13-repository-file-map)
 
-In commercial airport automated baggage handling systems (BHS), high-speed sortation conveyors process thousands of luggage items per hour. These facilities require deterministic, low-latency embedded controllers to continuously track transit velocity, verify dimensional clearances, sort baggage into aircraft hold tiers, dynamically detect blockages, and prevent catastrophic belt jams.
+## 1. Problem and objectives
 
-This project implements a complete, industrial-grade **Automated Baggage Sizing, Counting, Spacing, and Jam Detection Controller** executed entirely in **bare-metal C** (using direct CMSIS register access `#include "stm32f4xx.h"` — no HAL, no LL, and no CubeMX) on an **ARM Cortex-M4 (STM32F401CCU6 Black Pill)** microcontroller.
+An entry detection alone does not confirm that an object has reached the exit of a transport section. An item can become stuck between the two points while an entry counter continues to show that it was detected. Without timely supervision, following items can accumulate and interrupt the flow. Manual observation also makes consistent counting and size assessment difficult.
 
-### Key Highlights
-- **100% Bare-Metal CMSIS:** Maximum timing determinism, minimal memory footprint (< 4 KB ROM), and direct register manipulation.
-- **Hardware ADC + DMA Engine:** Dual-channel scan conversion on `ADC1` paired with `DMA2 Stream 0` in circular mode provides non-blocking, zero-CPU background analog sampling of two optical sensors in ~24 µs.
-- **Microsecond Timing Engine:** A 1 ms deterministic `SysTick` interrupt drives all hysteresis filtering, optical edge detection, speed calculation, luggage length sizing, and jam timeout supervision.
-- **Camera-less Dimensional Sizing:** Deduces exact physical object length from transit speed and optical occlusion duration ($L = v \times \Delta t$), classifying objects into Carry-on (`SM`), Standard Hold (`ST`), or Oversized (`LG`).
-- **Dynamic Jam Detection:** Replaces crude static timers with an adaptive speed-dependent timeout ($2 \times T_{\text{expected}}$), detecting jams within ~300 ms while retaining a 10 s failsafe line stall alert.
-- **Security Violation Rejection:** Automatically identifies and isolates reverse-direction transits ($S_2 \rightarrow S_1$) without corrupting forward batch metrics.
-- **Wireless Telemetry:** Real-time CSV telemetry streamed at 9600 baud via HC-05 Bluetooth to a companion mobile terminal.
+The project addresses this by tracking entry and exit events, identifying an excessive transit delay, and reporting the condition to an operator. It also estimates object speed and length, assigns a prototype size category, records unexpected exit-side events, and flags inactivity after operation has begun.
 
----
+The objectives are to:
 
-## 2. Evaluator Defense: Prototype Test Rig vs. Industrial Conveyor
+- Count forward arrivals at the exit sensor and track entries that have not yet reached it.
+- Estimate transit speed and object length using two reflective infrared sensors.
+- Raise a local jam alert when an entered object takes too long to arrive, then clear it when the pending count returns to zero.
+- Provide Bluetooth status, buzzer and LED indications, and a pushbutton reset.
+- Demonstrate the sensing and timing logic using direct peripheral-register programming.
 
-> [!IMPORTANT]
-> ### 🎓 Key Oral Examination Defense
-> When presenting this project to examiners and evaluators, use the following rigorous engineering justification:
+See the complete [problem statement](problem_statement.pdf).
 
-* **Q: Why did you construct a 45° inclined gravity chute with rolling balls instead of using a motorized chain/belt conveyor?**  
-  **A:** *"In an operational airport terminal, baggage is propelled along motorized chain and belt conveyors driven by variable-frequency drives (VFDs). Because an industrial multi-meter conveyor chain was physically inaccessible in our undergraduate laboratory, we engineered a precision 45° inclined cardboard chute where test balls roll freely under gravitational acceleration to simulate continuous luggage transit.  
-  Crucially, the underlying real-time embedded systems architecture—**multi-channel continuous ADC1 scan with DMA2 circular transfers, 1 ms SysTick timing engine, EXTI external button interrupt, velocity computation, luggage length sizing, and dynamic jam detection**—is **100% IDENTICAL** to an industrial conveyor controller."*
+## 2. Prototype scope
 
-* **Q: Why is there no rotating thread or lead-screw drive?**  
-  **A:** *"A rotating lead screw or threaded rod introduces artificial mechanical friction, backlash, vibration, and unnatural start-stop dynamics that do not reflect smooth conveyor motion. The 45° gravity inclined plane allows objects of varied dimensions to transit naturally and repeatably, producing sharp, clean optical leading- and trailing-edge pulses without mechanical artifacts."*
+A 45-degree gravity-fed chute with sensors 150 mm apart models a short baggage-conveyor section. Test balls represent objects of different sizes. This makes entry/exit timing and obstruction scenarios practical to demonstrate without a motorized conveyor.
 
-* **Q: Why does the system not vary a motor speed to manage luggage spacing?**  
-  **A:** *"In modern airport baggage induction systems, luggage spacing is managed by controlling the injection/release interval of bags at the induction feeder rather than continually altering main trunk line belt speeds. We reflect this exact dynamic: the operator releases items with specific time intervals based on bag size. The system measures this release gap, computes transit velocity, and displays live spacing guidance (`[ALERT] HIGH SPACING REQ` for oversized bags, `[INFO] LOW SPACING REQ` for carry-ons) directly on the mobile supervisory terminal."*
+The controller uses an STM32F401CCU6 Black Pill, bare-metal C, and CMSIS device definitions through `stm32f4xx.h`; the application does not use HAL, LL, or CubeMX. It assumes a 16 MHz system/peripheral clock for its timing constants.
 
----
+The prototype observes and reports. It does not stop a belt, regulate a motor, enforce object spacing, or physically sort luggage. Demonstrations should use one object at a time: the firmware has a pending-object counter but only one set of measurement timestamps. The size thresholds are laboratory categories, not airline baggage limits.
 
-## 3. Core Engineering Principles & Mathematics
+## 3. Measurement and fault detection
 
-```
-                45° Gravity-Fed Chute / Conveyor Simulation
-      [Luggage Induction Point]
-                 \
-                  \  (Rolling object under gravity)
-                   \
-               [ SENSOR 1 ]  ◄── PA1 (ADC1_IN1)  Entry Optical Gate
-                    \
-                     \  ◄────  BELT_GAP_MM = 150 mm  ────►
-                      \
-                  [ SENSOR 2 ]  ◄── PA4 (ADC1_IN4)  Exit Optical Gate
-                       \
-                        \
-                    [ EXIT ]
-```
+### 3.1 Sensor detection
 
-### 3.1 Single Honest Speed Measurement
-Unlike naïve multi-sensor setups where speed is corrupted by object length, this system computes transit velocity strictly from the **leading edge** of Sensor 1 to the **leading edge** of Sensor 2:
+Both TCRT5000 modules provide analog readings. Software hysteresis changes a sensor from clear to detected below `TH_ON = 1800`, and back to clear above `TH_OFF = 2200`. Between the thresholds, the previous state is retained. These modules detect reflected infrared light; the source uses the name `Blocked` for the detected state.
+
+Thresholds depend on sensor placement, object surface, and ambient conditions. The main loop polls the sensors; their transitions are not captured by hardware edge interrupts.
+
+### 3.2 Transit speed
+
+Let `D = 150 mm` be the sensor separation and let `dt` be the interval in milliseconds between the detected leading edges at S1 and S2:
 
 $$
-v = \frac{\text{BELT\_GAP\_MM} \times 1000}{t_{S2\text{\_entry}} - t_{S1\text{\_entry}}} \quad \left[\text{mm/s}\right]
+v_{\text{estimate}} = \frac{D \times 1000}{\Delta t_{\text{transit}}}\quad[\text{mm/s}]
 $$
 
-Because both timestamps are captured at the exact instant the front boundary of the object breaks each optical beam, the object's physical dimension cancels out completely:
+The implementation uses integer arithmetic and updates `speed` only for `15 <= dt <= 2000 ms`. `MIN_DT_MS = 15` is a speed-update condition; it does not reject all short sensor pulses or prevent them from affecting counters.
+
+The result estimates average object speed between the sensors. A rolling object accelerates on the incline, so this is not necessarily its instantaneous speed at the exit.
+
+### 3.3 Length and prototype categories
+
+When the exit sensor clears, its detection duration is combined with the stored speed:
 
 $$
-\Delta t_{\text{transit}} = \frac{D_{\text{gap}}}{v} \implies v \text{ is strictly independent of object length/diameter.}
+L_{\text{estimate}} = \frac{v_{\text{estimate}} \times \Delta t_{S2}}{1000}\quad[\text{mm}]
 $$
 
-### 3.2 Camera-less Luggage Sizing via Optical Occlusion
-Once velocity $v$ is established as the object spans the calibrated gap ($\text{BELT\_GAP\_MM} = 150\text{ mm}$), the firmware tracks the beam occlusion duration $\Delta t_{\text{blocked}}$ across Sensor 2 (from leading edge to trailing edge):
+| Code | Terminal category | Estimated length |
+|---|---|---|
+| `SM` | Carry-on | Below 50 mm |
+| `ST` | Standard Hold | 50 through 120 mm |
+| `LG` | Oversized | Above 120 mm |
 
-$$
-\text{Length (mm)} = \frac{v \times \left(t_{S2\text{\_exit}} - t_{S2\text{\_entry}}\right)}{1000}
-$$
+This is a one-dimensional estimate. Its accuracy depends on speed during detection, sensor geometry, reflectivity, and when the polling loop observes each transition. It does not establish exact ball diameter, full luggage dimensions, or speed-independent classification under all conditions. No spacing measurement or size-dependent spacing message is implemented.
 
-Because length is derived in physical millimetres rather than raw time, **classification is completely invariant to speed changes**: a fast-rolling suitcase and a slow-rolling suitcase of identical size receive the exact same classification.
+### 3.4 Jam and inactivity conditions
 
-| Category Code | Classification | Physical Dimension | Test Rig Equivalent |
-|:---:|:---|:---:|:---|
-| **`SM`** | Carry-on / Hand Luggage | $\text{Length} < 50\text{ mm}$ | Small Test Ball |
-| **`ST`** | Standard Hold Luggage | $50\text{ mm} \le \text{Length} \le 120\text{ mm}$ | Medium Test Ball |
-| **`LG`** | Oversized Baggage | $\text{Length} > 120\text{ mm}$ | Large Test Ball |
+| Condition | Source rule | Behaviour |
+|---|---|---|
+| Pending transit | S1 detects a new object | Increment `inTransit` and record the latest entry time. |
+| Excessive transit delay | `inTransit > 0` and more than `PAIR_MS = 2000` ms since the latest entry | Set the shared `alert` flag. |
+| Delayed arrival/recovery | S2 detects an object while `inTransit > 0` | Increment `total`, decrement `inTransit`, and clear the alert if the pending count reaches zero. |
+| Inactivity after operation | `total > 0`, `inTransit == 0`, no alert, and at least `TIMEOUT_MS = 20000` ms since the last counted arrival | Set the alert; telemetry labels it `CONVEYOR STOPPED / IDLE`. |
 
-### 3.3 Luggage Spacing Dynamics & Live Operator Alerts
-In high-throughput sorting hubs, oversized bags require larger inter-bag spacing buffers to prevent jamming in high-speed diverter pushers:
-- **`LG` (> 120 mm):** Mobile terminal triggers `[ALERT] HIGH SPACING REQ` (requires larger release gaps).
-- **`SM` (< 50 mm):** Mobile terminal displays `[INFO] LOW SPACING REQ` (permits tighter release packing density).
-- **`ST` (50–120 mm):** Mobile terminal displays `NORMAL SPACING`.
+These are fixed thresholds, evaluated in the main loop. The implemented jam limit is not computed from measured speed, and alarm response can be delayed by blocking transmission. A jam retains the pending count so that a later arrival can still be counted.
 
-### 3.4 Speed-Adaptive Dynamic Jam Detection
-Static jam timers (e.g., fixed 10-second delays) fail in modern automation: on a slow line they alarm prematurely, while on a high-speed line a catastrophic physical pileup occurs seconds before an alarm sounds.
+The inactivity timer does not alarm on an untouched chute immediately after boot or reset. It measures absence of counted arrivals, not motor rotation; it cannot distinguish an empty running conveyor from a stopped one.
 
-Our controller calculates the expected transit time dynamically from the current transit velocity:
+### 3.5 Unexpected exit-side events
 
-$$
-T_{\text{expected}} = \frac{\text{BELT\_GAP\_MM} \times 1000}{v} \quad \left[\text{ms}\right]
-$$
+If S2 detects an object with `inTransit == 0` and `total > 0`, the firmware increments `violations`. This is a basic indication of possible reverse movement. Before the first counted arrival, this condition is not recorded. There is no reverse-travel absorption state, and a later S1 detection can still increment the pending count. The implementation is not a complete direction classifier or security interlock.
 
-The dynamic jam threshold is set to twice the expected arrival time:
-
-$$
-T_{\text{jam\_limit}} = 2 \times T_{\text{expected}}
-$$
-
-* On our test rig, a typical transit is $\approx 150\text{ ms}$, triggering an acoustic jam alert within $\approx 300\text{ ms}$ if the object stalls between sensors.
-* A secondary 10-second static fallback timer (`TIMEOUT_MS = 10000`) monitors complete conveyor standstill or sensor failure when no speed data can be computed.
-
-### 3.5 Directional Security Violation Detection
-In airport baggage claim and sterile security zones, items moving backwards represent a critical security breach (e.g., unauthorized baggage pushback or manual tampering). If Sensor 2 triggers while the state machine is in `STATE_IDLE`, the system increments a dedicated `violations` counter, enters `STATE_VIOLATION_ABSORB`, pulses an alert, and isolates the event so reverse motion never corrupts forward bag counts.
-
----
-
-## 4. End-to-End System Architecture
+## 4. System architecture
 
 ```mermaid
 flowchart TD
-    subgraph Hardware_Perception ["Hardware Sensing Layer"]
-        S1["TCRT5000 Sensor 1 (Entry AO)"] -->|Analog 0..3.3V| PA1["STM32 PA1 (ADC1_IN1)"]
-        S2["TCRT5000 Sensor 2 (Exit AO)"] -->|Analog 0..3.3V| PA4["STM32 PA4 (ADC1_IN4)"]
-        BTN["Reset Pushbutton"] -->|Ground Contact| PB5["STM32 PB5 (EXTI5 Pull-up)"]
-    end
-
-    subgraph MCU_Autonomous_Hardware ["Autonomous Silicon Engines (Zero CPU Overhead)"]
-        PA1 --> ADC1["ADC1 Multi-Channel Scan Engine<br/>(Continuous Conversion, 84 Cycles)"]
-        PA4 --> ADC1
-        ADC1 -->|Hardware Trigger| DMA["DMA2 Stream 0 (Channel 0)<br/>Circular Half-Word Transfer"]
-        DMA -->|Auto Write| RAM["SRAM Buffer: adcData[2]<br/>(Always Current, ~24 us refresh)"]
-    end
-
-    subgraph Real_Time_Core ["Deterministic 1 ms Execution Core"]
-        SYST["SysTick 1 ms Interrupt Engine"] --> Hyst["Software Schmitt-Trigger Hysteresis<br/>(TH_ON = 1800, TH_OFF = 2200)"]
-        RAM -.->|Read| Hyst
-        Hyst --> FSM["4-State Transit Machine<br/>(IDLE / TRANSIT / VIOLATION / TRAILING)"]
-        FSM --> Speed["Leading-Edge Velocity Calculator<br/>v = Gap / dt"]
-        FSM --> Size["Occlusion Duration Luggage Sizer<br/>L = v * dt_blocked"]
-        FSM --> Jam["Speed-Adaptive Jam Monitor<br/>Limit = 2 * T_expected"]
-        Jam -->|Alarm Active| BZ_PAT["Pulsed Acoustic Engine<br/>(200 ms ON / 800 ms OFF)"]
-    end
-
-    subgraph Actuation_Telemetry ["Actuation & Telemetry Layer"]
-        BZ_PAT --> PB0["PB0 (BC547 NPN Switch)"] --> BUZZ["5V Active Buzzer"]
-        SYST --> PC13["PC13 (Active-Low LED)"] --> LED["1 Hz System Heartbeat"]
-        BTN -.-> EXTI_ISR["EXTI9_5 ISR (Debounced)"] -->|Reset Counters| FSM
-        FSM --> TX_BUF["Telemetry Serializer"] --> USART["USART2 TX (PA2 @ AF7)"]
-        USART --> HC05["HC-05 Bluetooth Module"] --> PHONE["Android / iOS Telemetry Terminal"]
-    end
-
-    style Hardware_Perception fill:#1e293b,stroke:#475569,stroke-width:2px,color:#f8fafc
-    style MCU_Autonomous_Hardware fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f8fafc
-    style Real_Time_Core fill:#0f172a,stroke:#a855f7,stroke-width:2px,color:#f8fafc
-    style Actuation_Telemetry fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#f8fafc
+    S1["TCRT5000 S1 / PA1"] --> ADC["ADC1: software-triggered channel reads"]
+    S2["TCRT5000 S2 / PA4"] --> ADC
+    ADC --> LOOP["Main loop: hysteresis and detected transitions"]
+    TICK["SysTick: increment msTicks every 1 ms"] --> LOOP
+    LOOP --> TRACK["Counters, timing, speed and length estimates"]
+    TRACK --> ALERT["Fixed transit and inactivity checks"]
+    ALERT --> OUTPUT["PA5 buzzer control and PC13 LED"]
+    TRACK --> UART["USART2: blocking labelled text at 9600 baud"]
+    UART --> BT["HC-05: Bluetooth Classic SPP terminal"]
+    BUTTON["PB5 button / EXTI5"] --> FLAG["Debounced reset flag"]
+    FLAG --> LOOP
 ```
 
----
+The SysTick interrupt supplies a millisecond counter. Sampling, edge decisions, measurements, alarms, output patterns, and telemetry execute in the main loop. DMA and a four-state enumerated sequencer are not configured in the current source.
 
-## 5. Hardware Bill of Materials (BOM)
+## 5. Hardware
 
-| Item | Specification / Model | Qty | Electrical Rating | Function in System |
-|:---|:---|:---:|:---:|:---|
-| **Microcontroller** | STM32F401CCU6 "Black Pill" | 1 | 3.3V Core, 5V VBUS in | ARM Cortex-M4 32-bit MCU running bare-metal firmware |
-| **Programmer** | ST-LINK/V2 SWD Programmer | 1 | 3.3V Logic (SWDIO/SWCLK) | Flash programming and hardware register debugging |
-| **Optical Sensors** | TCRT5000 Reflective IR Modules | 2 | **3.3V VCC ONLY**, Analog `AO` | Entry and exit leading/trailing edge detection gates |
-| **Bluetooth Transceiver** | HC-05 Breakout Module | 1 | 5V VCC, 3.3V UART Levels | Wireless telemetry transmission (USART2 @ 9600 baud) |
-| **Acoustic Alarm** | 5V Active Piezo Buzzer | 1 | 5V DC, $\approx 30\text{ mA}$ | Acoustic alert for jam timeouts and line stalls |
-| **Transistor Switch** | BC547 or 2N2222 NPN | 1 | $V_{CEO} = 45\text{V}, I_C = 100\text{ mA}$ | Current driver interfacing 3.3V PB0 to 5V 30mA buzzer |
-| **Base Resistor** | 1 kΩ ¼W Carbon Film | 1 | $\approx 2.6\text{ mA}$ base drive | Limits PB0 current into BC547 base into full saturation |
-| **Reset Pushbutton** | 6 mm Momentary Tactile Switch | 1 | Ground contact | Triggers `EXTI5` asynchronous counter reset |
-| **Mechanical Test Rig** | Cardboard Chute (45° incline) | 1 | $150\text{ mm}$ physical sensor gap | Gravity feed simulating industrial conveyor movement |
-| **Luggage Specimens** | Varied Diameter Balls (3 sizes) | 3+ | $<50\text{ mm}, 50\text{-}120\text{ mm}, >120\text{ mm}$ | Simulates carry-on, standard hold, and oversized bags |
-| **Breadboard & Wires** | Full-size MB-102 + Jumpers | 1 | M-M & M-F Jumpers | Circuit interconnect and dual-rail distribution |
-| **Power Source** | Standard USB-C Cable | 1 | 5V DC @ 500mA from PC / Bank | Supplies entire rig via onboard LDO (no external PSU needed) |
+| Component | Quantity | Purpose |
+|---|---|---|
+| STM32F401CCU6 Black Pill | 1 | Microcontroller and USB-powered board |
+| TCRT5000 reflective IR module with analog output | 2 | Entry and exit sensing |
+| HC-05 Bluetooth breakout | 1 | Wireless serial status |
+| Active buzzer module with compatible active-low control | 1 | Audible indication, controlled by PA5 |
+| Momentary pushbutton | 1 | Operator reset via PB5 |
+| ST-LINK/V2 | 1 | SWD programming and debugging |
+| Breadboard, jumper wires, USB cable | As needed | Connections and power |
+| Inclined chute and test objects | 1 set | Laboratory movement and obstruction tests |
 
----
+The main [circuit diagram](circuit_diagram.jpg) and additional drawings are linked below. Buzzer supply voltage must match the selected module; the firmware specifies PA5 control polarity, not the module's supply rating.
 
-## 6. Pinout & Electrical Interfacing
+## 6. Pinout and electrical interfacing
 
-### 6.1 Complete Pinout Table
+| STM32 pin | Configuration | Connection |
+|---|---|---|
+| PA1 | Analog, ADC1 channel 1 | S1 analog output (`AO`) |
+| PA4 | Analog, ADC1 channel 4 | S2 analog output (`AO`) |
+| PA2 | AF7, USART2 TX | HC-05 RXD |
+| PA3 | AF7, USART2 RX | HC-05 TXD; application does not process received data |
+| PA5 | Open-drain output | Buzzer control: low = on, released = off |
+| PB5 | Input with pull-up, EXTI5 falling edge | Pushbutton to ground |
+| PC13 | Output, active-low onboard LED | Status indication |
+| PA13 / PA14 | SWDIO / SWCLK | ST-LINK programming interface |
+| 3V3 | Regulated board supply | Both TCRT5000 modules |
+| 5V | USB supply rail | HC-05 breakout with an onboard regulator rated for this supply |
+| GND | Common reference | Sensors, Bluetooth, buzzer module, button and programmer |
 
-| Black Pill Pin | Alternate Function | Connected Peripheral | Signal Description | Electrical Characteristics |
-|:---|:---|:---|:---|:---|
-| **`PA1`** | `ADC1_IN1` | TCRT5000 Sensor 1 (Entry) | Analog Phototransistor Output `AO` | $0.0\text{ V} - 3.3\text{ V}$ Analog (Software Hysteresis) |
-| **`PA4`** | `ADC1_IN4` | TCRT5000 Sensor 2 (Exit) | Analog Phototransistor Output `AO` | $0.0\text{ V} - 3.3\text{ V}$ Analog (Software Hysteresis) |
-| **`PA2`** | `USART2_TX` (AF7) | HC-05 Bluetooth Module | Serial TX Data to HC-05 **RXD** | 3.3V CMOS Logic, 9600 Baud, 8N1 |
-| **`PA3`** | `USART2_RX` (AF7) | HC-05 Bluetooth Module | Serial RX Data from HC-05 **TXD** | 3.3V CMOS Logic (Unused in unidirectional telemetry) |
-| **`PA5` / `PB0`** | GPIO Output (Open-Drain / Push-Pull) | Buzzer Trigger Control | PA5 (Open-Drain Active-Low) or PB0 (NPN Active-High) |
-| **`PB5`** | GPIO Input + `EXTI5` | Momentary Tactile Button | Counter Reset Interrupt | Internal Pull-Up enabled (`PUPDR=01`), Shorts to GND |
-| **`PC13`** | GPIO Output | Onboard Blue LED | Heartbeat Monitor | Active Low (Toggles every 1000 ms in SysTick) |
-| **`3V3`** | Board Power Output | Both TCRT5000 Sensors | Module $V_{CC}$ Supply | Regulated 3.3V from onboard RT9193 LDO ($\approx 50\text{ mA}$) |
-| **`5V`** | USB VBUS Direct Pin | HC-05 $V_{CC}$, Buzzer (+) | High-Current Supply Rail | Direct 5V from USB port ($\approx 80\text{ mA}$ peak load) |
-| **`GND`** | System Ground | Common Ground Bus | Common Reference Ground | Tied across all modules and breadboard rails |
-| **`PA13 / PA14`** | `SWDIO / SWCLK` | ST-LINK/V2 Dongle | Serial Wire Debug & Flash | Target programming leads (Leave ST-LINK 3.3V pin open) |
+PA1 and PA4 analog signals must remain within the ADC's permitted voltage range. Powering these sensor modules from 3.3 V keeps their outputs compatible with the board's analog supply; a 5 V digital-tolerance claim does not apply to ADC operation.
 
----
+For a buzzer module, PA5 controls its input. The module supply current should not be assumed to flow safely through a GPIO simply because the output is open-drain. Match the input voltage/current requirements to the STM32 specification; a bare buzzer load may require an external driver. The current firmware does not configure PB0 as a buzzer output.
 
-### 6.2 Critical Electrical Safety Rule (3.3V vs 5V Analog Rail)
+![Main circuit diagram](circuit_diagram.jpg)
 
-> [!CAUTION]
-> ### ⚡ PERMANENT HARDWARE DAMAGE WARNING
-> **Power the TCRT5000 IR sensor modules strictly from the `3V3` rail, NEVER from the `5V` rail.**
->
-> While many digital GPIO pins on the STM32F401 are 5V-tolerant (FT) when operating as standard digital inputs, **pins configured in Analog Mode (`MODER = 11`) completely bypass the internal 5V clamp and protection structures**. 
-> 
-> If a TCRT5000 module is powered from 5V, its analog output pin (`AO`) will swing up to $\approx 4.6\text{ V}$ when reflecting off light surfaces. Applying $> 3.6\text{ V}$ directly to `PA1` or `PA4` will induce silicon substrate latch-up, distort concurrent ADC readings across other channels, and permanently burn out the ADC input multiplexer.
->
-> *Running the modules at 3.3V keeps the maximum analog swing safely within the MCU's $0 - 3.3\text{ V}$ reference range without requiring external resistor dividing networks.*
+Additional repository drawings:
 
----
+- [Sensors and Bluetooth](circuit_and_wiring_diagrams/02-sensors-and-bluetooth.png)
+- [Buzzer and reset button](circuit_and_wiring_diagrams/03-buzzer-and-reset-button.png)
+- [Inclined-plane layout](circuit_and_wiring_diagrams/inclined-plane-layout.png)
+- [Power wiring](circuit_and_wiring_diagrams/power-wiring.svg)
 
-### 6.3 Breadboard Dual-Rail Power Distribution
+## 7. Tracking and recovery
 
-The entire system is powered from a single USB-C cable plugged into the STM32 Black Pill. The board provides both required supply rails naturally:
-- **`5V` Pin (VBUS):** Feeds the HC-05 Bluetooth module (requires $\ge 3.6\text{ V}$ to clear internal LDO dropout) and the 5V active buzzer.
-- **`3V3` Pin (LDO Output):** Feeds the Black Pill MCU core and both TCRT5000 analog sensors.
+The implementation uses counters and flags rather than named `STATE_*` values:
 
-```
-       BREADBOARD POWER TOPOLOGY (Single USB-C Cable Supply)
-       ====================================================
-           [ USB-C Cable (5V from Laptop or Power Bank) ]
-                               │
-                               ▼
-                    [ STM32F401 Black Pill ]
-                    │                      │
-             (5V Pin: Direct VBUS)   (3V3 Pin: Regulated LDO)
-                    │                      │
-                    ▼                      ▼
-           [ Top Breadboard Rail ]  [ Bottom Breadboard Rail ]
-              (+) 5.0V Rail            (+) 3.3V Rail
-              (-) GND  Rail            (-) GND  Rail
-                    │                      │
-         ┌──────────┴──────────┐           ├─────────────────────┐
-         ▼                     ▼           ▼                     ▼
-    HC-05 Bluetooth       5V Buzzer   TCRT5000 Sensor 1     TCRT5000 Sensor 2
-       (VCC Pin)           (+) Pin        (VCC Pin)             (VCC Pin)
-                                           
-        ▲ COMMON GROUND JUMPER: Top (-) Rail tied to Bottom (-) Rail ▲
-```
+1. Read S1 and S2 sequentially and apply hysteresis.
+2. On a new S1 detection, increment `inTransit` and replace `s1Time` and `lastS1Entry` with the current tick.
+3. On a new S2 detection with a pending entry, increment `total`, decrement `inTransit`, and update speed if the transit interval is valid. This happens at the leading edge, before the object fully clears S2.
+4. On the corresponding S2 clear transition, use the detection duration to calculate length and category if a stored speed is available.
+5. Evaluate fault conditions and drive the outputs. A normal counted arrival requests a nominal 120 ms confirmation chirp; an alert requests a 200 ms on / 800 ms off pattern.
+6. Handle a pending reset and transmit status for selected events or periodic updates.
 
----
+A jam does not discard the entered object. Releasing it towards S2 can recover the count and clear the alert. Because only the latest entry time is stored, multiple simultaneous objects cannot be measured or supervised individually.
 
-### 6.4 Transistor Buzzer Driver & Bluetooth Interconnect
+## 8. Firmware and register configuration
 
-#### Buzzer Drive Circuitry
-An active 5V buzzer draws $\approx 30\text{ mA}$, which exceeds the maximum recommended single-pin source current ($\approx 20\text{ mA}$) and cannot be driven to full loudness from a 3.3V logic level. A standard BC547 NPN transistor acts as a low-side saturation switch:
+| Peripheral | Configuration in `src/main.c` |
+|---|---|
+| RCC | Enables GPIOA/B/C, ADC1, USART2 and SYSCFG clocks. |
+| GPIO | PA1/PA4 analog; PA2/PA3 AF7; PA5 open-drain; PB5 input with pull-up; PC13 output. |
+| ADC1 | 12-bit, one software-triggered conversion per read; channels selected through `SQR3`; polling waits for EOC. |
+| ADC common | Prescaler PCLK2 / 4; 4 MHz ADC clock when PCLK2 is 16 MHz. |
+| ADC sample time | 84 sampling cycles on channels 1 and 4. With 12 conversion cycles, nominal conversion time is about 24 microseconds per channel, or 48 microseconds for the pair, before software overhead. |
+| SysTick | `LOAD = 15999`, `CTRL = 7`; 1 ms tick at 16 MHz. The ISR only increments `msTicks`. |
+| EXTI / NVIC | PB5 mapped to EXTI5; falling edge enables `EXTI9_5_IRQHandler`; accepted presses set `resetFlag` after a greater-than-200 ms debounce interval. |
+| USART2 | `BRR = 0x0683`, TX and RX enabled, 9600 baud at 16 MHz, 8 data bits, no parity, 1 stop bit, no flow control. |
 
-```
-  +5V Rail ───────┬───────────────────────────────┐
-                  │                               │
-             [+] Buzzer                           │
-             [-] Active 5V                        │
-                  │                          [1N4148 Diode]
-                  ├───────────────────────────────┘ (Optional flyback)
-                  │ Collector
-               ┌──┴──┐
-PB0 ──[ 1 kΩ ]─┤ BC547│ NPN
-               └──┬──┘
-                  │ Emitter
-  GND Rail ───────┴───────────────────────────────
-```
+The ADC read is explicitly blocking:
 
-#### Bluetooth UART Interconnect
-The HC-05 radio communicates via asynchronous serial UART:
-- **STM32 `PA2` (`USART2_TX`)** $\longrightarrow$ **HC-05 `RXD`** (3.3V logic level directly compatible; no resistor divider required).
-- **STM32 `PA3` (`USART2_RX`)** $\longleftarrow$ **HC-05 `TXD`** (3.3V output from HC-05).
-- *Note:* Do not connect the HC-05 `EN` / `KEY` pin; holding it high forces 38400 baud AT command mode. Leave it floating for automatic 9600 baud transparent data transmission.
-
----
-
-## 7. Deterministic 4-State Machine Sequencer
-
-The core tracking engine is implemented as a non-blocking, deterministic finite state machine (FSM) evaluated every 1 ms inside `SysTick_Handler`:
-
-```mermaid
-stateDiagram-v2
-    [*] --> STATE_IDLE
-
-    STATE_IDLE: 0. IDLE (Deck Clear)
-    STATE_IN_TRANSIT: 1. IN_TRANSIT (Traversing 150mm Gap)
-    STATE_VIOLATION_ABSORB: 2. VIOLATION_ABSORB (Reverse Direction Object)
-    STATE_TRAILING_EDGE: 3. TRAILING_EDGE (Luggage Sizing Active)
-
-    STATE_IDLE --> STATE_IN_TRANSIT: S1 Leading Edge (ADC below 1800)
-    STATE_IDLE --> STATE_VIOLATION_ABSORB: S2 Leading Edge (Wrong-Way Entry)
-
-    STATE_IN_TRANSIT --> STATE_TRAILING_EDGE: S2 Leading Edge (Compute Velocity)
-    STATE_IN_TRANSIT --> STATE_IDLE: Jam Alert (Transit Exceeds 2x Expected Time)
-
-    STATE_VIOLATION_ABSORB --> STATE_IDLE: S1 Trailing Edge or 2.0s Timeout
-
-    STATE_TRAILING_EDGE --> STATE_IDLE: S2 Trailing Edge (Compute Size and Classify)
-```
-
-### State Definitions & Trigger Criteria
-
-| State | Enumeration | Active Condition | Exit Trigger & Action |
-|:---:|:---|:---|:---|
-| **0** | `STATE_IDLE` | Both optical beams clear. Monitoring deck. | **S1 Leading Edge ($ADC < 1800$):** Timestamp $t_{S1\text{\_entry}}$, transition to `STATE_IN_TRANSIT`.<br/>**S2 Leading Edge ($ADC < 1800$):** Reverse violation detected, transition to `STATE_VIOLATION_ABSORB`. |
-| **1** | `STATE_IN_TRANSIT` | Luggage is actively spanning the 150 mm physical gap. | **S2 Leading Edge ($ADC < 1800$):** Timestamp $t_{S2\text{\_entry}}$, calculate velocity $v$, transition to `STATE_TRAILING_EDGE`.<br/>**Dynamic Jam Timeout ($t > 2 \times T_{\text{expected}}$):** Trigger buzzer, record jam alarm, abort to `STATE_IDLE`. |
-| **2** | `STATE_VIOLATION_ABSORB` | Reverse object moving backward ($S_2 \rightarrow S_1$). | **S1 Trailing Edge or 2.0 s Timeout:** Security violation recorded in telemetry; returns to `STATE_IDLE` without incrementing bag counts. |
-| **3** | `STATE_TRAILING_EDGE` | Luggage actively occluding Sensor 2 exit gate. | **S2 Trailing Edge ($ADC > 2200$):** Calculate beam occlusion duration $\Delta t_{\text{blocked}}$, compute length in mm, categorize (`SM`/`ST`/`LG`), transmit Bluetooth telemetry, return to `STATE_IDLE`. |
-
----
-
-## 8. Register-by-Register Firmware Architecture
-
-All firmware is written in strict bare-metal C without HAL, LL, or CubeMX dependencies. Every hardware register write is documented below matching [`src/main.c`](file:///c:/Users/varan/OneDrive/Desktop/5thsem/es_case_study/src/main.c).
-
-### 8.1 Clock Gating (`RCC`)
-Before any peripheral register can be modified, its dedicated bus clock must be enabled in the Reset and Clock Control (`RCC`) subsystem:
 ```c
-/* Enable AHB1 peripheral clocks for GPIOA, GPIOB, GPIOC, and DMA2 */
-RCC->AHB1ENR |= (1U << 0);   /* Bit 0:  GPIOA clock enable */
-RCC->AHB1ENR |= (1U << 1);   /* Bit 1:  GPIOB clock enable */
-RCC->AHB1ENR |= (1U << 2);   /* Bit 2:  GPIOC clock enable */
-RCC->AHB1ENR |= (1U << 22);  /* Bit 22: DMA2 clock enable */
-
-/* Enable APB2 peripheral clocks for ADC1 and System Configuration (SYSCFG) */
-RCC->APB2ENR |= (1U << 8);   /* Bit 8:  ADC1 clock enable */
-RCC->APB2ENR |= (1U << 14);  /* Bit 14: SYSCFG clock enable (required for EXTI routing) */
-
-/* Enable APB1 peripheral clock for USART2 */
-RCC->APB1ENR |= (1U << 17);  /* Bit 17: USART2 clock enable */
-```
-
----
-
-### 8.2 General Purpose I/O (`GPIO`)
-Each pin's operating mode is configured via its 2-bit field in `GPIOx->MODER` (`00`=Input, `01`=Output, `10`=Alternate Function, `11`=Analog):
-```c
-/* Configure PA1 and PA4 as Analog Mode (11b) for ADC1 Channels 1 & 4 */
-GPIOA->MODER |= (3U << (1 * 2));   /* PA1 = Analog */
-GPIOA->MODER |= (3U << (4 * 2));   /* PA4 = Analog */
-
-/* Configure PA2 and PA3 as Alternate Function Mode (10b) for USART2 */
-GPIOA->MODER &= ~((3U << (2 * 2)) | (3U << (3 * 2)));
-GPIOA->MODER |=  ((2U << (2 * 2)) | (2U << (3 * 2)));
-
-/* Route PA2 and PA3 to AF7 (USART2) via Alternate Function Low Register AFR[0] */
-GPIOA->AFR[0] &= ~((0xFU << (2 * 4)) | (0xFU << (3 * 4)));
-GPIOA->AFR[0] |=  ((7U  << (2 * 4)) | (7U  << (3 * 4)));
-
-/* Configure PB0 (Buzzer) and PC13 (Heartbeat LED) as Push-Pull Outputs (01b) */
-GPIOB->MODER &= ~(3U << (0 * 2));
-GPIOB->MODER |=  (1U << (0 * 2));   /* PB0 = Output */
-GPIOC->MODER &= ~(3U << (13 * 2));
-GPIOC->MODER |=  (1U << (13 * 2));  /* PC13 = Output */
-
-/* Configure PB5 as Digital Input (00b) with Internal Pull-Up for Pushbutton */
-GPIOB->MODER &= ~(3U << (5 * 2));   /* PB5 = Input */
-GPIOB->PUPDR &= ~(3U << (5 * 2));
-GPIOB->PUPDR |=  (1U << (5 * 2));   /* PUPDR[11:10] = 01b (Pull-up) */
-```
-
----
-
-### 8.3 Analog-to-Digital Converter (`ADC1`)
-Instead of reading 1-bit digital trimpots (`DO`), `ADC1` samples the continuous analog voltage (`AO`) from both sensors:
-```c
-/* Set ADC Clock Prescaler to divide by 4 (APB2 16 MHz / 4 = 4 MHz ADC clock) */
-ADC->CCR &= ~(3U << 16);
-ADC->CCR |=  (1U << 16);   /* ADC_CCR_ADCPRE = 01b (/4) */
-
-/* Configure Scan Mode, 12-bit Resolution, Continuous Conversion, and DMA triggers */
-ADC1->CR1 |= (1U << 8);    /* SCAN: Scan mode enabled (converts Ch1 then Ch4) */
-ADC1->CR2 |= (1U << 1);    /* CONT: Continuous conversion mode */
-ADC1->CR2 |= (1U << 8);    /* DMA:  Enable DMA requests from ADC */
-ADC1->CR2 |= (1U << 9);    /* DDS:  DMA requests continue in circular mode */
-
-/* Set Sample Time to 84 cycles for Channel 1 and Channel 4 (stable high-impedance read) */
-ADC1->SMPR2 |= (4U << (1 * 3)) | (4U << (4 * 3));  /* SMPR2: 100b = 84 cycles */
-
-/* Configure Regular Sequence: Sequence Length = 2 conversions */
-ADC1->SQR1 &= ~(0xFU << 20);
-ADC1->SQR1 |=  (1U   << 20);   /* L[3:0] = 1 (2 conversions) */
-ADC1->SQR3 = (1U << 0) | (4U << 5);  /* 1st = Ch 1 (PA1), 2nd = Ch 4 (PA4) */
-
-/* Enable ADC1 */
-ADC1->CR2 |= (1U << 0);    /* ADON = 1 */
-```
-
----
-
-### 8.4 Direct Memory Access (`DMA2 Stream 0`)
-`ADC1` features only a single 16-bit data register (`ADC_DR`). In scan mode, Channel 1 converts in $\approx 24\ \mu\text{s}$, followed immediately by Channel 4, which overwrites `ADC_DR`. No interrupt or main-loop polling can reliably retrieve both values before data corruption occurs.
-
-`DMA2 Stream 0` offloads this entirely to hardware:
-```c
-/* Ensure DMA2 Stream 0 is disabled before updating configuration */
-DMA2_Stream0->CR &= ~(1U << 0);
-while (DMA2_Stream0->CR & (1U << 0)) { /* Wait for stream to abort */ }
-
-/* Clear all interrupt flags for Stream 0 in Low Interrupt Flag Clear Register */
-DMA2->LIFCR = 0x3D;
-
-/* Set Source Address: ADC1 Data Register */
-DMA2_Stream0->PAR = (uint32_t)&(ADC1->DR);
-
-/* Set Destination Address: Global SRAM array uint16_t adcData[2] */
-DMA2_Stream0->M0AR = (uint32_t)adcData;
-
-/* Number of data items to transfer per circular pass: 2 half-words */
-DMA2_Stream0->NDTR = 2;
-
-/* Stream Configuration: Channel 0, Peripheral-to-Memory, Half-Word, Circular */
-DMA2_Stream0->CR = 0;
-DMA2_Stream0->CR |= (0U << 25);  /* CHSEL = 0 (ADC1 is mapped to Channel 0) */
-DMA2_Stream0->CR |= (1U << 8);   /* CIRC  = 1 (Continuous circular reload) */
-DMA2_Stream0->CR |= (1U << 10);  /* MINC  = 1 (Increment memory pointer to adcData[1]) */
-DMA2_Stream0->CR |= (1U << 11);  /* PSIZE = 01b (16-bit peripheral data size) */
-DMA2_Stream0->CR |= (1U << 13);  /* MSIZE = 01b (16-bit memory data size) */
-DMA2_Stream0->CR |= (0U << 6);   /* DIR   = 00b (Peripheral-to-memory) */
-
-/* Enable DMA2 Stream 0 */
-DMA2_Stream0->CR |= (1U << 0);   /* EN = 1 */
-
-/* Trigger ADC Software Start of Conversion */
-ADC1->CR2 |= (1U << 30);         /* SWSTART = 1 */
-```
-*Result:* `adcData[0]` (Sensor 1) and `adcData[1]` (Sensor 2) update continuously in SRAM with **0% CPU utilization**.
-
----
-
-### 8.5 Deterministic 1 ms SysTick Engine (`SysTick`)
-The ARM Cortex-M4 core SysTick timer is clocked from the 16 MHz internal HSI oscillator:
-```c
-/* Set reload register for exactly 1 ms interrupt tick: (16,000,000 / 1000) - 1 */
-SysTick->LOAD = 16000 - 1;
-SysTick->VAL  = 0;
-SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk |  /* Processor clock (16 MHz) */
-                SysTick_CTRL_TICKINT_Msk   |  /* Enable SysTick interrupt */
-                SysTick_CTRL_ENABLE_Msk;       /* Start timer counter */
-```
-
-#### Software Schmitt-Trigger Hysteresis Filter
-Inside `SysTick_Handler()`, raw analog values are filtered with dual threshold hysteresis to eliminate edge chatter caused by ambient optical noise:
-```c
-/* Sensor 1 (Entry Gate) Hysteresis */
-if (adcData[0] < 1800) {
-    s1State = 1;  /* BEAM BLOCKED (Object detected, IR reflected) */
-} else if (adcData[0] > 2200) {
-    s1State = 0;  /* BEAM CLEAR (Ambient deck background) */
-}
-
-/* Sensor 2 (Exit Gate) Hysteresis */
-if (adcData[1] < 1800) {
-    s2State = 1;  /* BEAM BLOCKED */
-} else if (adcData[1] > 2200) {
-    s2State = 0;  /* BEAM CLEAR */
+static uint16_t adcRead(uint8_t channel)
+{
+    ADC1->SQR3 = channel;
+    ADC1->CR2 |= (1U << 30);
+    while (!(ADC1->SR & (1U << 1))) {}
+    return (uint16_t)ADC1->DR;
 }
 ```
 
----
+There is no ADC scan, continuous-conversion, or DMA configuration. UART sending also waits for TXE for every character. The tick continues during transmission, but the main loop cannot sample the sensors or update its outputs until transmission returns.
 
-### 8.6 Asynchronous External Interrupt (`EXTI5`)
-A physical momentary pushbutton on `PB5` resets the total counted bags and directional violations:
-```c
-/* Map PB5 to EXTI line 5 in System Configuration External Interrupt Register */
-SYSCFG->EXTICR[1] &= ~(0xFU << 4);
-SYSCFG->EXTICR[1] |=  (1U   << 4);   /* Port B selected for EXTI5 */
+The pushbutton interrupt sets a flag; counter clearing takes place later in the main loop. The reset branch clears displayed counters, measurements, the alert, and sensor-state flags, then sends a confirmation. It is not a hardware reset and does not reinitialize every internal timing/measurement flag. Reset with the chute empty for repeatable demonstrations.
 
-/* Configure Falling Edge Trigger (Button press pulls PB5 low to GND) */
-EXTI->FTSR |= (1U << 5);   /* Falling edge trigger enabled */
-EXTI->RTSR &= ~(1U << 5);  /* Rising edge trigger disabled */
+## 9. Bluetooth telemetry
 
-/* Unmask EXTI Line 5 */
-EXTI->IMR |= (1U << 5);
+The HC-05 carries Bluetooth Classic Serial Port Profile (SPP), not BLE. Use a compatible SPP terminal, such as Serial Bluetooth Terminal on Android. An ordinary iOS BLE terminal cannot connect to a standard HC-05 SPP link.
 
-/* Enable and prioritize EXTI Line [9:5] vector in ARM NVIC */
-NVIC_SetPriority(EXTI9_5_IRQn, 2);
-NVIC_EnableIRQ(EXTI9_5_IRQn);
+Configure the HC-05 data-mode UART to match **9600 baud, 8N1**. The code sends labelled multiline ASCII blocks with CRLF line endings, not CSV. The UART receiver is enabled, but no remote-command parser is implemented.
+
+Illustrative normal status block:
+
+```text
+==============================
+   AIRPORT BAGGAGE STATUS
+==============================
+Total Bags   : 1
+Stalled Bags : 0 (between sensors)
+Speed        : 1000 mm/s
+Bag Length   : 40 mm
+Category     : Carry-on (SM)
+Alert Status : NORMAL (Running)
+Violations   : 0
+==============================
 ```
 
----
+`Stalled Bags` displays `inTransit`: it includes objects still moving normally between the sensors, not only confirmed stalls. `Speed` and `Bag Length` are stored measurements, not continuous live readings.
 
-### 8.7 Serial Telemetry Transceiver (`USART2`)
-`USART2` is configured for asynchronous 8N1 transmission at 9600 baud directly over `PA2`:
-```c
-/* Calculate Baud Rate Register (BRR) for 9600 baud at 16 MHz APB1 clock:
-   USARTDIV = 16,000,000 / (16 * 9600) = 104.1666
-   Mantissa = 104 = 0x68, Fraction = 0.1666 * 16 = 2.66 -> 3 = 0x3
-   BRR = 0x0683 */
-USART2->BRR = 0x0683;
+Other emitted text includes:
 
-/* Enable Transmitter (TE) and USART2 Peripheral (UE) */
-USART2->CR1 |= (1U << 3);   /* TE = 1 (Transmitter enable) */
-USART2->CR1 |= (1U << 13);  /* UE = 1 (USART enable) */
-```
+| Event | Text |
+|---|---|
+| Startup banner | `SMART BAGGAGE SYSTEM READY (9600)` |
+| Jam alert | `>> JAM DETECTED (Bag Stalled)! <<` |
+| Inactivity alert | `>> CONVEYOR STOPPED / IDLE <<` |
+| Reset confirmation | `>>> SYSTEM RESET: All Counters Cleared <<<` |
+| No category yet | `None` |
 
----
+Selected events request a status block; otherwise `SEND_MS = 1500` controls periodic reporting. The first periodic update is scheduled about two seconds after startup initialization. Inactivity sets the alert without setting `newEvent`, so its wireless notification may wait for the next report. At 9600 baud with 8N1 framing, each character takes about 1.04 ms; a 300-character block occupies about 312 ms of serial airtime.
 
-## 9. Bluetooth Telemetry Protocol & Data Format
+## 10. Build and programming
 
-The microcontroller streams structured CSV ASCII strings over Bluetooth (HC-05 on `USART2`) to any serial terminal app (e.g., *Serial Bluetooth Terminal* on Android or *BLE Terminal* on iOS) at **9600 Baud, 8 Data Bits, No Parity, 1 Stop Bit (8N1)**.
+The repository contains application source, not a complete Keil project, startup package, or prebuilt firmware image.
 
-### Telemetry Packet Structure
-```
-B,<total>,<speed_mm_s>,<length_mm>,<category>,<belt_status>,<violations>\r\n
-```
+1. Install Keil MDK / microVision and the STM32F4 device pack. Create a project for the STM32F401CC device.
+2. Add CMSIS Core and the device startup/system files. Add [`src/main.c`](src/main.c) to the application source group and configure the include paths and device definition required by the pack, normally `STM32F401xC`.
+3. Ensure the startup/system configuration leaves the core, APB1 and APB2 clocks at 16 MHz. The application hard-codes the SysTick reload and UART divisor and does not configure a PLL itself.
+4. Build with a supported ARM compiler and resolve any errors or warnings from the selected toolchain. Confirm the startup vector table uses the supplied SysTick and EXTI handlers.
+5. Select ST-Link Debugger and SWD. Connect SWDIO, SWCLK and GND, power the target appropriately, and configure flash download and reset/run.
+6. Flash the board, pair a compatible terminal with the HC-05, and confirm that readable startup/status text appears.
 
-| Field Index | Field Identifier | Data Type | Example Value | Description |
-|:---:|:---|:---:|:---:|:---|
-| **0** | Header | String | `B` | Telemetry packet sync header |
-| **1** | `<total>` | Integer | `14` | Total valid forward bags counted since boot/reset |
-| **2** | `<speed_mm_s>` | Integer | `845` | Calculated transit velocity in $\text{mm/s}$ |
-| **3** | `<length_mm>` | Integer | `78` | Derived luggage length / ball diameter in $\text{mm}$ |
-| **4** | `<category>` | String | `ST` | Luggage category: `SM` (Carry-on), `ST` (Standard), `LG` (Oversized), `-` (Pending) |
-| **5** | `<belt_status>` | Boolean | `0` | System status: `0` = Normal Conveyor Flow, `1` = Jam / Stall Alarm Active |
-| **6** | `<violations>` | Integer | `1` | Total directional security violations ($S_2 \rightarrow S_1$) intercepted |
+## 11. Demonstration procedure
 
-### System Status Packets
-- **On Boot / Hardware Reset:** Microcontroller emits `READY\r\n`.
-- **On Pushbutton Press (`PB5`):** Microcontroller clears all totals and emits `RESET\r\n`.
+These are checks to perform on the hardware, not claims of a new test run. The [report](report/Report_Group_8.pdf) contains the project's recorded evaluation. Allow serial output to finish and use separated objects when checking the current firmware.
 
-```
---- SAMPLE TERMINAL TRACE ---
-READY
-B,1,852,42,SM,0,0     <-- Carry-on bag (<50mm), normal transit
-B,2,810,88,ST,0,0     <-- Standard hold bag (50-120mm)
-B,3,745,145,LG,0,0    <-- Oversized baggage (>120mm), triggers high spacing alert
-B,3,0,0,-,1,0         <-- JAM ALARM: Ball blocked Sensor 1 without reaching Sensor 2
-B,3,0,0,-,0,1         <-- DIRECTIONAL VIOLATION: Reverse pushback detected
-RESET
-B,0,0,0,-,0,0         <-- Counters cleared to zero via pushbutton
-```
+| Check | Procedure and expected observation |
+|---|---|
+| Startup | Power on; observe the two startup blinks/chirps and the ready banner. |
+| Empty before first item | Leave the chute empty after boot/reset; the inactivity alert is not armed while `total == 0`. |
+| Forward arrival | Move one object past S1 then S2; the pending count rises at S1 and falls at S2, where the total increments. |
+| Length/category | Clear S2 after a valid timed transit; observe the estimated length and one of the three categories. Compare with a known object size. |
+| Jam | Detect an object at S1 and prevent it from reaching S2; after more than two seconds plus loop delay, expect an alert. |
+| Recovery | Release the same object towards S2; expect the total to increment and the alert to clear when the pending count reaches zero. |
+| Inactivity | After a completed arrival with no pending objects, wait twenty seconds; expect the idle alert and its next status report. |
+| Unexpected S2 event | After a valid arrival, trigger S2 alone with no pending entry; expect `violations` to increase. A full reverse traversal has the limitations described above. |
+| Reset | With both sensors clear, press PB5; expect displayed counters/measurements to clear and the reset confirmation to appear. |
 
----
+## 12. Limitations and future work
 
-## 10. Keil µVision 5 Build & Toolchain Setup
+- **Blocking acquisition/reporting:** Sensor polling stops while text is transmitted. Short passages can be missed, and fault/output decisions are delayed. Millisecond tick resolution does not guarantee millisecond detection latency.
+- **One set of timestamps:** Multiple entry detections can increase the pending counter, but each replaces the timing reference. Overlapping objects and individual queue timing are not supported reliably.
+- **Limited jam coverage:** A pending count is cleared at S2's leading edge. An object that reaches S2 and then remains there is not covered by a dedicated exit-clearance timeout.
+- **Estimated dimensions and retained speed:** Acceleration, sensor geometry, integer rounding and delayed polling affect length. When a transit falls outside 15–2000 ms, the previous speed remains stored and can be reused for length estimation; a delayed object's displayed size may therefore be stale or unreliable.
+- **Basic direction indication:** The exit-only rule does not isolate a complete reverse passage and is disabled before the first counted arrival.
+- **Output timing and reset:** The idle LED toggles repeatedly while the tick is an exact multiple of 500 ms, so a stable heartbeat is not guaranteed. Reset is deferred to the main loop and does not clear every internal measurement flag.
+- **No persistence or actuation:** Counts are held in RAM. There is no automatic belt control, physical sorting, link acknowledgement, or production safety interlock.
 
-Follow these exact steps to compile and flash the firmware onto the STM32F401CCU6 Black Pill:
+Useful next steps include buffered/interrupt-driven telemetry, acquisition that continues during reporting, individually timestamped entries, full direction tracking, an S2-clearance timeout, threshold calibration, and speed-adaptive transit windows. Moving periodic output timing into a tick-driven task and clearing all measurement state on reset would improve repeatability. These are future improvements, not implemented features.
 
-1. **Launch Keil µVision 5** and navigate to `Project` $\rightarrow$ `New µVision Project...`.
-2. Name the project `airport_baggage_f401` and save it to the repository directory.
-3. In the Device Selection tree, pick:  
-   `STMicroelectronics` $\rightarrow$ `STM32F4 Series` $\rightarrow$ `STM32F401` $\rightarrow$ `STM32F401CC` $\rightarrow$ **`STM32F401CCUx`**.
-4. The **Manage Run-Time Environment (RTE)** window will appear. Check **ONLY** the following two components:
-   - ☑ **`CMSIS` $\rightarrow$ `CORE`**
-   - ☑ **`Device` $\rightarrow$ `Startup`**  
-   *(Leave all HAL, LL, and Board Support checkboxes strictly unchecked).*
-5. Right-click `Target 1` $\rightarrow$ `Source Group 1` $\rightarrow$ `Add Existing Files to Group 'Source Group 1'...` and select [`src/main.c`](file:///c:/Users/varan/OneDrive/Desktop/5thsem/es_case_study/src/main.c).
-6. Open **Project Options (`Alt + F7`)**:
-   - **`Target` Tab:** Ensure Code Generation uses `ARM Compiler Version 5` or `Version 6`.
-   - **`C/C++` Tab:** Set Optimization to **`Level 0 (-O0)`** or **`Level 1 (-O1)`** for clean hardware register debugging.
-   - **`Debug` Tab:** In the top-right dropdown, switch from *Simulator* to **`ST-Link Debugger`**.
-   - Click **`Settings`** next to ST-Link Debugger:
-     - Under **Debug**, verify Port is set to **`SW`** (Serial Wire). The ST-LINK serial number and ARM Core IDCODE should populate.
-     - Under **Flash Download**, check the box ☑ **`Reset and Run`** (so the firmware executes immediately after flashing without requiring manual power cycling).
-7. Press **`F7` (Build Project)**. The build window must output:  
-   `0 Error(s), 0 Warning(s)`.
-8. Connect the ST-LINK/V2 SWD leads to the Black Pill (`SWDIO`, `SWCLK`, `GND`) and press **`F8` (Download)** to flash the MCU.
+## 13. Repository file map
 
----
+The following paths match the files tracked in this repository, including the problem-statement PDF:
 
-## 11. Step-by-Step Live Demonstration Protocol
-
-This 8-step test protocol validates every subsystem requirement during oral defense:
-
-```
-+------+--------------------------+------------------------------+---------------------------------------+
-| Step | Action Performed         | Hardware Reaction            | Phone Telemetry Terminal Output       |
-+------+--------------------------+------------------------------+---------------------------------------+
-|  1   | Connect USB Power        | PC13 LED blinks at 1 Hz      | Receives: "READY"                     |
-|  2   | Leave Chute Empty (10 s) | Buzzer emits stall alert     | Receives: "B,0,0,0,-,1,0"             |
-|  3   | Occlude S1 Only (Hand)   | Buzzer alarms after 2.0 s    | No count increment (Partial rejected) |
-|  4   | Roll Small Ball (<50mm)  | Buzzer silent, Count +1      | Receives: "B,1,850,38,SM,0,0"         |
-|  5   | Roll Medium Ball         | Count +1, Sizing displayed   | Receives: "B,2,820,85,ST,0,0"         |
-|  6   | Roll Large Ball (>120mm) | Count +1, Sizing displayed   | Receives: "B,3,750,140,LG,0,0"        |
-|  7   | Roll Ball Reverse (S2->S1)| Alarm chirp, Count unchanged | Receives: "B,3,0,0,-,0,1" (Violation) |
-|  8   | Press Pushbutton (PB5)   | Instantaneous register reset | Receives: "RESET" then "B,0,0,0,-,0,0"|
-+------+--------------------------+------------------------------+---------------------------------------+
-```
-
----
-
-## 12. Examiner Viva Voce Defense & Deep-Dive Q&A
-
-### Q1: Why use ADC and DMA for digital TCRT5000 sensors instead of reading standard GPIO pins?
-> **Answer:**  
-> Reading the digital `DO` pin shifts the analog comparison threshold to a mechanical potentiometer on the breakout board, which suffers from thermal drift, vibration shift, and mechanical tampering. By sampling the raw analog `AO` pin via **ADC1**, our detection threshold is locked deterministically in software with digital Schmitt-trigger hysteresis (`TH_ON = 1800`, `TH_OFF = 2200`).  
-> Furthermore, `ADC1` has only one single 16-bit data register (`ADC_DR`). When scanning multiple channels, Channel 4 overwrites Channel 1 within 24 µs. **DMA2 Stream 0 in circular mode** is physically required to extract converted channel values directly into SRAM without consuming CPU instruction cycles.
-
-### Q2: Why is the transit velocity calculation immune to object size?
-> **Answer:**  
-> Speed is computed strictly from the **leading edge** of Sensor 1 to the **leading edge** of Sensor 2. Because both timestamps are captured when the front physical boundary of the ball breaks each optical beam, the object's diameter or length cancels out completely:
-> 
-> $$v = \frac{D_{\text{gap}}}{t_{S2\text{\_front}} - t_{S1\text{\_front}}}$$
-> 
-> An oversized suitcase and a small carry-on traversing the gap at identical speeds yield the exact same velocity figure.
-
-### Q3: What prevents edge bouncing or sensor chatter when an object enters the optical beam?
-> **Answer:**  
-> Dual-layer filtering is implemented:
-> 1. **Software Schmitt Hysteresis:** The beam is declared blocked only when the analog read drops below `1800` (~1.45V) and declared clear only when it rises above `2200` (~1.77V).
-> 2. **Temporal Blanking:** A 15 ms minimum occlusion time filter (`MIN_DT_MS = 15`) rejects fast ambient optical noise, fluorescent light flicker, and dust particles.
-
-### Q4: What happens if an object rolls backwards down the chute?
-> **Answer:**  
-> In `STATE_IDLE`, an unexpected trigger on exit Sensor 2 indicates reverse motion ($S_2 \rightarrow S_1$). The FSM transitions to `STATE_VIOLATION_ABSORB`, increments the `violations` metric, and remains in this quarantine state until Sensor 1 clears. This ensures reverse transits can never trigger false forward bag counts or corrupt velocity math.
-
-### Q5: Why is the TCRT5000 module prohibited from being powered by 5V?
-> **Answer:**  
-> When STM32 pins (`PA1`, `PA4`) are placed in **Analog Mode** (`MODER = 11`), internal digital clamping diodes to $V_{DD}$ are disconnected to prevent non-linear distortion of analog voltages. Consequently, analog mode pins are **not 5V tolerant**. Powering the sensor from 5V would allow its analog output to drive up to ~4.6V, injecting substrate current that damages the ADC input multiplexer.
-
----
-
-## 13. Repository File Map
-
-```
-es_case_study/
-├── circuit_diagram.png
-├── README.md                                    # ◄── Master Project Documentation (GitHub Landing)
+```text
+Automated-Gravity-Fed-Object-Counter-and-Jam-Detection-System/
+├── README.md
+├── problem_statement.pdf
+├── circuit_diagram.jpg
 ├── src/
-│   └── main.c                                   # Complete Bare-Metal C Firmware (Keil µVision 5)
+│   └── main.c
 ├── circuit_and_wiring_diagrams/
-│   ├── 02-sensors-and-bluetooth.png             # Stage 2 sensor & HC-05 layout photo
-│   ├── 03-buzzer-and-reset-button.png           # Stage 3 buzzer driver & button photo
-│   ├── 04-power-and-programming.png            # Stage 4 ST-LINK & USB power topology photo
-│   └── power-wiring.svg                         # Dual-rail USB breadboard distribution diagram
-|
+│   ├── 02-sensors-and-bluetooth.png
+│   ├── 03-buzzer-and-reset-button.png
+│   ├── inclined-plane-layout.png
+│   └── power-wiring.svg
+├── One_page_writeup/
+│   ├── group_8_One_Page_Project_Writeup.docx
+│   └── group_8_One_Page_Project_Writeup.pdf
 ├── presentation/
-|   ├── Group_8_Automated_Gravity_Fed...pdf      # Official Case Study Defense Slide Deck (PDF)
-|   └── Group_8_Automated_Gravity_Fed...pptx     # Executive 16:9 Presentation Deck (PowerPoint)
-├── report
-|   ├── Report_Group_8.docx
-|   └── Report_Group_8.pdf
-├── One_page_writeup
-|   ├── group_8_One_Page_Project_Writeup.docx
-|   └── group_8_One_Page_Project_Writeup.pdf
-
+│   ├── Group_8_Automated_Gravity_Fed_Object_Counter_and_Jam_Detection_System.pdf
+│   └── Group_8_Automated_Gravity_Fed_Object_Counter_and_Jam_Detection_System.pptx
+└── report/
+    ├── Report_Group_8.docx
+    └── Report_Group_8.pdf
 ```
 
----
+Editable documents: [Report (DOCX)](report/Report_Group_8.docx), [one-page write-up (DOCX)](One_page_writeup/group_8_One_Page_Project_Writeup.docx), and [presentation (PPTX)](presentation/Group_8_Automated_Gravity_Fed_Object_Counter_and_Jam_Detection_System.pptx).
 
-### 👨‍💻 Project Authors & Academic Credits
-- **Project:** Automated Gravity-Fed Object Counter & Jam Detection System (Smart Airport Baggage Prototype)
+## Project Authors and Academic Credits
+
+- **Project:** Automated Gravity-Fed Object Counter and Jam Detection System (Smart Airport Baggage Prototype)
 - **Course:** 5th Semester Embedded Systems Case Study (Group 8)
-- **Target Platform:** ARM Cortex-M4 (STM32F401CCU6 Black Pill)
-- **Toolchain:** Keil µVision 5 (Bare-Metal CMSIS C)
+- **Target platform:** ARM Cortex-M4, STM32F401CCU6 Black Pill
+- **Toolchain:** Keil microVision, bare-metal CMSIS C
