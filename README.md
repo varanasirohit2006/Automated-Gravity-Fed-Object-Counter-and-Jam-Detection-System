@@ -668,9 +668,8 @@ This 8-step test protocol validates every subsystem requirement during oral defe
 
 ```
 es_case_study/
+├── circuit_diagram.png
 ├── README.md                                    # ◄── Master Project Documentation (GitHub Landing)
-├── MASTER_README.md                             # Specification & Reference Architecture Document
-├── .gitignore                                   # Standard Embedded & Toolchain Ignore List
 ├── src/
 │   └── main.c                                   # Complete Bare-Metal C Firmware (Keil µVision 5)
 ├── circuit_and_wiring_diagrams/
@@ -683,9 +682,16 @@ es_case_study/
 │   ├── preview_wiring_full.png                  # Full breadboard physical wiring preview
 │   ├── Smart Airport Baggage Wiring Diagram.png # Complete circuit schematic & pin interconnect
 │   └── wiring-diagram.svg                       # Vector electrical connection schematic
-└── presentation/
-    ├── Group_8_Automated_Gravity_Fed...pdf      # Official Case Study Defense Slide Deck (PDF)
-    └── Group_8_Automated_Gravity_Fed...pptx     # Executive 16:9 Presentation Deck (PowerPoint)
+├── presentation/
+|   ├── Group_8_Automated_Gravity_Fed...pdf      # Official Case Study Defense Slide Deck (PDF)
+|   └── Group_8_Automated_Gravity_Fed...pptx     # Executive 16:9 Presentation Deck (PowerPoint)
+├── report
+|    ├── Report_Group_8.docx
+|    └── Report_Group_8.pdf
+├── One_page_writeup
+|    ├── group_8_One_Page_Project_Writeup.docx
+|    └── group_8_One_Page_Project_Writeup.pdf
+
 ```
 
 ---
