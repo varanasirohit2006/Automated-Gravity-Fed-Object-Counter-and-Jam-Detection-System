@@ -673,24 +673,20 @@ es_case_study/
 ├── src/
 │   └── main.c                                   # Complete Bare-Metal C Firmware (Keil µVision 5)
 ├── circuit_and_wiring_diagrams/
-│   ├── 01-complete-wiring.png                   # High-res stage 1 wiring photo
 │   ├── 02-sensors-and-bluetooth.png             # Stage 2 sensor & HC-05 layout photo
 │   ├── 03-buzzer-and-reset-button.png           # Stage 3 buzzer driver & button photo
 │   ├── 04-power-and-programming.png            # Stage 4 ST-LINK & USB power topology photo
-│   ├── inclined-plane-layout.png                # High-res mechanical test rig diagram
-│   ├── power-wiring.svg                         # Dual-rail USB breadboard distribution diagram
-│   ├── preview_wiring_full.png                  # Full breadboard physical wiring preview
-│   ├── Smart Airport Baggage Wiring Diagram.png # Complete circuit schematic & pin interconnect
-│   └── wiring-diagram.svg                       # Vector electrical connection schematic
+│   └── power-wiring.svg                         # Dual-rail USB breadboard distribution diagram
+|
 ├── presentation/
 |   ├── Group_8_Automated_Gravity_Fed...pdf      # Official Case Study Defense Slide Deck (PDF)
 |   └── Group_8_Automated_Gravity_Fed...pptx     # Executive 16:9 Presentation Deck (PowerPoint)
 ├── report
-|    ├── Report_Group_8.docx
-|    └── Report_Group_8.pdf
+|   ├── Report_Group_8.docx
+|   └── Report_Group_8.pdf
 ├── One_page_writeup
-|    ├── group_8_One_Page_Project_Writeup.docx
-|    └── group_8_One_Page_Project_Writeup.pdf
+|   ├── group_8_One_Page_Project_Writeup.docx
+|   └── group_8_One_Page_Project_Writeup.pdf
 
 ```
 
