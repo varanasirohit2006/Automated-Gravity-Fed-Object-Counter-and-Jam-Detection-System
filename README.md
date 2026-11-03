@@ -1,3 +1,21 @@
+## Academic Details
+
+### Student Name(s) and Registration Number(s)
+
+| Student name | Registration number |
+|---|---|
+| Rohit Varanasi | CB.SC.U4CSE24561 |
+| Anish Reddy | CB.SC.U4CSE24524 |
+| Sri Ram | CB.SC.U4CSE24564 |
+| Tarun | CB.SC.U4CSE24555 |
+
+**Mentor:** Dr. A. Baskar  
+**Course:** 23CSE304 – Embedded Systems  
+**Department:** Department of Computer Science and Engineering  
+**Institution:** School of Computing, Amrita Vishwa Vidyapeetham, Coimbatore, India.
+
+---
+
 # 🧳 Automated Luggage Sizing, Counter & Dynamic Jam Detection System
 ### *Bare-Metal STM32F401 Embedded Prototype for Smart Airport Conveyor Lines*
 
